@@ -14,7 +14,7 @@ import crypto from "node:crypto";
 
 import { downloadLibreChatFile } from "./s3.js";
 
-import { callGeminiTool, testGeminiAuth, uploadToGeminiMcp } from "./gemini.js";
+import { callGeminiTool, uploadToGeminiMcp } from "./gemini.js";
 
 function createServer() {
   const server = new McpServer({
@@ -26,22 +26,20 @@ function createServer() {
     "generate_image",
     {
       title: "Generate image",
-      description: "Test Gemini MCP",
+      description: "Generate an image with Gemini from a text prompt.",
       inputSchema: {
         prompt: z.string(),
+        aspect_ratio: z.string().optional(),
       },
     },
-    async () => {
-      const result = await testGeminiAuth();
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+    async ({ prompt, aspect_ratio }) => {
+      const result = await callGeminiTool("gemini_image_generation", {
+        prompt,
+        aspect_ratio,
+      });
+
+      return result;
     },
   );
 
