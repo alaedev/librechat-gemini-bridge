@@ -1,8 +1,4 @@
 // src/gemini.ts
-
-import fs from "node:fs";
-import path from "node:path";
-
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
@@ -13,8 +9,9 @@ if (!GEMINI_MCP_URL) {
   throw new Error("GEMINI_MCP_URL is required");
 }
 
-console.log("GEMINI_MCP_URL:", GEMINI_MCP_URL);
-console.log("GEMINI_MCP_TOKEN exists:", Boolean(GEMINI_MCP_TOKEN));
+if (!GEMINI_MCP_TOKEN) {
+  throw new Error("GEMINI_MCP_TOKEN is required");
+}
 
 let client: Client | null = null;
 
@@ -23,20 +20,15 @@ async function getClient(): Promise<Client> {
     return client;
   }
 
-  const authenticatedFetch: typeof fetch = async (input, init = {}) => {
-    const headers = new Headers(init.headers);
-
-    headers.set("Authorization", `Bearer ${GEMINI_MCP_TOKEN}`);
-    headers.set("Accept", "application/json, text/event-stream");
-
-    return fetch(input, {
-      ...init,
-      headers,
-    });
-  };
+  console.log("Connecting to:", GEMINI_MCP_URL);
+  console.log("Token exists:", Boolean(GEMINI_MCP_TOKEN));
 
   const transport = new StreamableHTTPClientTransport(new URL(GEMINI_MCP_URL), {
-    fetch: authenticatedFetch,
+    requestInit: {
+      headers: {
+        Authorization: `Bearer ${GEMINI_MCP_TOKEN}`,
+      },
+    },
   });
 
   const newClient = new Client(
@@ -55,7 +47,7 @@ async function getClient(): Promise<Client> {
 
   client = newClient;
 
-  return newClient;
+  return client;
 }
 
 export async function callGeminiTool(
@@ -64,13 +56,13 @@ export async function callGeminiTool(
 ) {
   const mcp = await getClient();
 
-  console.log(`Calling Gemini MCP tool: ${name}`);
-
-  return await mcp.callTool({
+  return mcp.callTool({
     name,
     arguments: args,
   });
 }
+import fs from "node:fs";
+import path from "node:path";
 
 export async function uploadToGeminiMcp(filePath: string) {
   const instructions = await callGeminiTool("upload_media", {});
@@ -83,10 +75,10 @@ export async function uploadToGeminiMcp(filePath: string) {
 
   console.log("upload_media response:", text);
 
-  const tokenMatch = text.match(/token["\s:=]+([^\s"]+)/i);
+  const tokenMatch = text.match(/token["'\s:=]+([A-Za-z0-9._-]+)/i);
 
   if (!tokenMatch) {
-    throw new Error(`No pude obtener upload token de upload_media: ${text}`);
+    throw new Error(`No se pudo extraer el token de upload_media: ${text}`);
   }
 
   const uploadToken = tokenMatch[1];
@@ -109,22 +101,22 @@ export async function uploadToGeminiMcp(filePath: string) {
     body: data,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
+  const responseText = await response.text();
 
-    throw new Error(
-      `Gemini MCP upload failed ${response.status}: ${errorText}`,
-    );
+  if (!response.ok) {
+    throw new Error(`Gemini upload failed ${response.status}: ${responseText}`);
   }
 
-  const result = (await response.json()) as {
-    object_key?: string;
-  };
+  let result: any;
+
+  try {
+    result = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Respuesta no JSON del upload: ${responseText}`);
+  }
 
   if (!result.object_key) {
-    throw new Error(
-      `Upload response did not contain object_key: ${JSON.stringify(result)}`,
-    );
+    throw new Error(`El upload no devolvió object_key: ${responseText}`);
   }
 
   return result.object_key;
