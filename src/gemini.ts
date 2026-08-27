@@ -24,13 +24,11 @@ async function getClient(): Promise<Client> {
   }
 
   const transport = new StreamableHTTPClientTransport(new URL(GEMINI_MCP_URL), {
-    requestInit: {
-      headers: GEMINI_MCP_TOKEN
-        ? {
-            Authorization: `Bearer ${GEMINI_MCP_TOKEN}`,
-          }
-        : {},
-    },
+    authProvider: GEMINI_MCP_TOKEN
+      ? {
+          token: async () => GEMINI_MCP_TOKEN,
+        }
+      : undefined,
   });
 
   const newClient = new Client(
