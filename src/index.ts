@@ -12,7 +12,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { downloadLibreChatFile } from "./s3.js";
+import { downloadFromUrl } from "./s3.js";
 
 import { callGeminiTool, uploadToGeminiMcp } from "./gemini.js";
 
@@ -55,11 +55,11 @@ function createServer() {
          * Aquí LibreChat deberá suministrar
          * el object key de su propio bucket.
          */
-        librechat_object_key: z.string(),
+        image_url: z.string().url(),
       },
     },
 
-    async ({ prompt, librechat_object_key }) => {
+    async ({ prompt, image_url }) => {
       const id = crypto.randomUUID();
 
       const extension = path.extname(librechat_object_key) || ".jpg";
@@ -68,7 +68,7 @@ function createServer() {
 
       try {
         // 1. S3 LibreChat -> /tmp
-        await downloadLibreChatFile(librechat_object_key, localPath);
+        await downloadFromUrl(image_url, localPath);
 
         // 2. /tmp -> Gemini MCP storage
         const geminiObjectKey = await uploadToGeminiMcp(localPath);
