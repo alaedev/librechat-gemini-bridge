@@ -3,7 +3,8 @@
 const GEMINI_MCP_URL = process.env.GEMINI_MCP_URL!;
 const GEMINI_MCP_TOKEN = process.env.GEMINI_MCP_TOKEN!;
 
-console.log("ENV GEMINI_MCP_URL =", process.env.GEMINI_MCP_URL);
+console.log("GEMINI_MCP_URL:", GEMINI_MCP_URL);
+console.log("GEMINI_MCP_TOKEN exists:", Boolean(GEMINI_MCP_TOKEN));
 
 let rpcId = 1;
 
