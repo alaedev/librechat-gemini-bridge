@@ -9,7 +9,7 @@ const s3 = new S3Client({
   region: process.env.AWS_REGION!,
 });
 
-async function downloadFromUrl(url: string, destination: string) {
+export async function downloadFromUrl(url: string, destination: string) {
   const response = await fetch(url);
 
   if (!response.ok) {
