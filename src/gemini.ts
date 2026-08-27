@@ -23,12 +23,20 @@ async function getClient(): Promise<Client> {
     return client;
   }
 
+  const authenticatedFetch: typeof fetch = async (input, init = {}) => {
+    const headers = new Headers(init.headers);
+
+    headers.set("Authorization", `Bearer ${GEMINI_MCP_TOKEN}`);
+    headers.set("Accept", "application/json, text/event-stream");
+
+    return fetch(input, {
+      ...init,
+      headers,
+    });
+  };
+
   const transport = new StreamableHTTPClientTransport(new URL(GEMINI_MCP_URL), {
-    authProvider: GEMINI_MCP_TOKEN
-      ? {
-          token: async () => GEMINI_MCP_TOKEN,
-        }
-      : undefined,
+    fetch: authenticatedFetch,
   });
 
   const newClient = new Client(
