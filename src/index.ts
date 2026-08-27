@@ -120,10 +120,11 @@ function createServer() {
     "image_to_video",
     {
       title: "Create video from uploaded image",
-      description: "Animate an image uploaded to LibreChat using Veo.",
+      description: "Create a video from an image uploaded in LibreChat.",
+
       inputSchema: {
         prompt: z.string(),
-        librechat_object_key: z.string(),
+        image_url: z.string().url(),
 
         aspect_ratio: z.enum(["16:9", "9:16"]).optional(),
 
@@ -131,15 +132,13 @@ function createServer() {
       },
     },
 
-    async ({ prompt, librechat_object_key, aspect_ratio, resolution }) => {
+    async ({ prompt, image_url, aspect_ratio, resolution }) => {
       const id = crypto.randomUUID();
 
-      const extension = path.extname(librechat_object_key) || ".jpg";
-
-      const localPath = `/tmp/${id}${extension}`;
+      const localPath = `/tmp/${id}.jpg`;
 
       try {
-        await downloadLibreChatFile(librechat_object_key, localPath);
+        await downloadFromUrl(image_url, localPath);
 
         const geminiObjectKey = await uploadToGeminiMcp(localPath);
 

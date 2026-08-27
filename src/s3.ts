@@ -9,25 +9,16 @@ const s3 = new S3Client({
   region: process.env.AWS_REGION!,
 });
 
-export async function downloadLibreChatFile(
-  objectKey: string,
-  destination: string,
-) {
-  const response = await s3.send(
-    new GetObjectCommand({
-      Bucket: process.env.LIBRECHAT_S3_BUCKET!,
-      Key: objectKey,
-    }),
-  );
+async function downloadFromUrl(url: string, destination: string) {
+  const response = await fetch(url);
 
-  if (!response.Body) {
-    throw new Error("S3 object has no body");
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download image ${response.status}: ${await response.text()}`,
+    );
   }
 
-  await pipeline(
-    response.Body as NodeJS.ReadableStream,
-    fs.createWriteStream(destination),
-  );
+  const buffer = Buffer.from(await response.arrayBuffer());
 
-  return destination;
+  await fs.writeFile(destination, buffer);
 }
