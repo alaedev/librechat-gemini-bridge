@@ -3,6 +3,8 @@
 const GEMINI_MCP_URL = process.env.GEMINI_MCP_URL!;
 const GEMINI_MCP_TOKEN = process.env.GEMINI_MCP_TOKEN!;
 
+console.log("ENV GEMINI_MCP_URL =", process.env.GEMINI_MCP_URL);
+
 let rpcId = 1;
 
 async function rpc(method: string, params: any = {}) {
