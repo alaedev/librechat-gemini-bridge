@@ -30,6 +30,40 @@ function getHeaders(): Record<string, string> {
   return headers;
 }
 
+export async function testGeminiAuth() {
+  const response = await fetch(GEMINI_MCP_URL, {
+    method: "POST",
+
+    redirect: "manual",
+
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      Authorization: `Bearer ${GEMINI_MCP_TOKEN}`,
+    },
+
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "auth-test",
+      method: "tools/list",
+      params: {},
+    }),
+  });
+
+  const text = await response.text();
+
+  console.log("STATUS:", response.status);
+  console.log("URL:", response.url);
+  console.log("REDIRECTED:", response.redirected);
+  console.log("LOCATION:", response.headers.get("location"));
+  console.log("BODY:", text);
+
+  return {
+    status: response.status,
+    text,
+  };
+}
+
 /**
  * Gemini MCP devuelve las respuestas normalmente como SSE:
  *
