@@ -1,53 +1,43 @@
-// src/gemini.ts
-
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const GEMINI_MCP_URL = process.env.GEMINI_MCP_URL;
-const GEMINI_MCP_TOKEN = process.env.GEMINI_MCP_TOKEN;
+
 const GEMINI_MCP_UPLOAD_URL = process.env.GEMINI_MCP_UPLOAD_URL;
+
+const GEMINI_MCP_TOKEN = process.env.GEMINI_MCP_TOKEN;
 
 if (!GEMINI_MCP_URL) {
   throw new Error("GEMINI_MCP_URL is required");
+}
+
+if (!GEMINI_MCP_UPLOAD_URL) {
+  throw new Error("GEMINI_MCP_UPLOAD_URL is required");
 }
 
 if (!GEMINI_MCP_TOKEN) {
   throw new Error("GEMINI_MCP_TOKEN is required");
 }
 
-console.log("GEMINI_MCP_URL:", GEMINI_MCP_URL);
-console.log("GEMINI_MCP_TOKEN exists:", Boolean(GEMINI_MCP_TOKEN));
-
 let client: Client | null = null;
+
 let connectingPromise: Promise<Client> | null = null;
 
-/**
- * Devuelve un cliente MCP conectado a gemini-mcp.
- *
- * El propio SDK se encarga de:
- * - initialize
- * - notifications/initialized
- * - Mcp-Session-Id
- * - tools/call
- */
 async function getClient(): Promise<Client> {
   if (client) {
     return client;
   }
 
-  /*
-   * Evita abrir dos sesiones simultáneamente si LibreChat
-   * ejecuta dos llamadas casi al mismo tiempo.
-   */
   if (connectingPromise) {
     return connectingPromise;
   }
 
   connectingPromise = (async () => {
-    console.log("Connecting to Gemini MCP:", GEMINI_MCP_URL);
+    console.log("[Gemini MCP] Connecting:", GEMINI_MCP_URL);
 
     const transport = new StreamableHTTPClientTransport(
       new URL(GEMINI_MCP_URL),
@@ -72,7 +62,7 @@ async function getClient(): Promise<Client> {
 
     await newClient.connect(transport);
 
-    console.log("Connected to Gemini MCP");
+    console.log("[Gemini MCP] Connected");
 
     client = newClient;
 
@@ -86,16 +76,13 @@ async function getClient(): Promise<Client> {
   }
 }
 
-/**
- * Ejecuta una tool del gemini-mcp.
- */
 export async function callGeminiTool(
   name: string,
   args: Record<string, unknown>,
 ) {
   const mcp = await getClient();
 
-  console.log(`Calling Gemini MCP tool: ${name}`);
+  console.log("[Gemini MCP] Calling:", name);
 
   try {
     return await mcp.callTool({
@@ -103,12 +90,11 @@ export async function callGeminiTool(
       arguments: args,
     });
   } catch (error) {
-    console.error(`Gemini MCP tool "${name}" failed:`, error);
+    console.error(`[Gemini MCP] ${name} failed:`, error);
 
     /*
-     * Si la sesión se ha quedado inválida,
-     * descartamos el cliente para que la siguiente
-     * llamada cree una sesión nueva.
+     * Fuerza una sesión nueva
+     * en la siguiente llamada.
      */
     client = null;
 
@@ -116,76 +102,90 @@ export async function callGeminiTool(
   }
 }
 
-/**
- * Sube un fichero local al sistema de uploads
- * utilizado por gemini-mcp.
- *
- * Flujo:
- *
- * 1. llama a upload_media
- * 2. obtiene las instrucciones/token temporal
- * 3. POST /upload
- * 4. obtiene object_key
- */
-export async function uploadToGeminiMcp(filePath: string) {
-  if (!GEMINI_MCP_UPLOAD_URL) {
-    throw new Error("GEMINI_MCP_UPLOAD_URL is required");
+function getTextFromToolResult(result: any): string {
+  if (!Array.isArray(result?.content)) {
+    return "";
   }
 
-  console.log("Requesting upload instructions for:", path.basename(filePath));
+  return result.content
+    .filter((item: any) => item?.type === "text")
+    .map((item: any) => item.text ?? "")
+    .join("\n");
+}
 
-  const instructions = await callGeminiTool("upload_media", {});
+function extractUploadToken(text: string): string {
+  /*
+   * Forma más probable:
+   *
+   * upload_media
+   *   --token "xxxxx"
+   */
 
-  const content = instructions.content;
+  const cliMatch = text.match(/--token\s+["']?([^"'\s]+)["']?/i);
 
-  const text = Array.isArray(content)
-    ? (content.find((item: any) => item.type === "text")?.text ?? "")
-    : "";
-
-  console.log("upload_media response:", text);
+  if (cliMatch?.[1]) {
+    return cliMatch[1];
+  }
 
   /*
-   * Importante:
-   *
-   * Este regex depende del formato exacto que
-   * devuelve tu versión de gemini-mcp.
-   *
-   * Cuando probemos upload_media por primera vez,
-   * veremos el texto real y podemos ajustarlo
-   * si fuera necesario.
+   * Fallbacks por si cambia el texto.
    */
-  const tokenMatch = text.match(/token["'\s:=]+([A-Za-z0-9._-]+)/i);
 
-  if (!tokenMatch) {
-    throw new Error(
-      `Could not extract upload token from upload_media response: ${text}`,
-    );
+  const tokenMatch = text.match(
+    /(?:upload[_ -]?token|token)["'\s:=]+([A-Za-z0-9._-]+)/i,
+  );
+
+  if (tokenMatch?.[1]) {
+    return tokenMatch[1];
   }
 
-  const uploadToken = tokenMatch[1];
+  throw new Error(
+    `Could not extract upload token from upload_media response: ${text}`,
+  );
+}
 
-  const data = await fs.promises.readFile(filePath);
+export async function uploadToGeminiMcp(filePath: string) {
+  console.log("[Gemini Upload] Requesting upload token");
 
-  console.log("Uploading file to Gemini MCP:", path.basename(filePath));
+  /*
+   * El MCP original genera
+   * un token one-time.
+   */
+  const instructions = await callGeminiTool("upload_media", {});
+
+  const text = getTextFromToolResult(instructions);
+
+  const uploadToken = extractUploadToken(text);
+
+  const data = await fs.readFile(filePath);
+
+  const filename = path.basename(filePath);
+
+  /*
+   * IMPORTANTE:
+   * el CLI oficial utiliza multipart/form-data
+   * con field name "file".
+   */
+  const form = new FormData();
+
+  form.append("file", new Blob([data]), filename);
+
+  console.log("[Gemini Upload] Uploading:", filename);
 
   const response = await fetch(GEMINI_MCP_UPLOAD_URL, {
     method: "POST",
 
     headers: {
       Authorization: `Bearer ${uploadToken}`,
-      "Content-Type": "application/octet-stream",
-      "X-Filename": path.basename(filePath),
     },
 
-    body: data,
+    body: form,
   });
 
   const responseText = await response.text();
 
   if (!response.ok) {
-    throw new Error(
-      `Gemini MCP upload failed ${response.status}: ${responseText}`,
-    );
+    throw new Error(`Gemini upload failed ${response.status}: ${responseText}`);
   }
 
   let result: any;
@@ -193,16 +193,14 @@ export async function uploadToGeminiMcp(filePath: string) {
   try {
     result = JSON.parse(responseText);
   } catch {
-    throw new Error(`Gemini MCP upload returned invalid JSON: ${responseText}`);
+    throw new Error(`Gemini upload returned invalid JSON: ${responseText}`);
   }
 
   if (!result.object_key) {
-    throw new Error(
-      `Gemini MCP upload did not return object_key: ${responseText}`,
-    );
+    throw new Error(`Gemini upload did not return object_key: ${responseText}`);
   }
 
-  console.log("Gemini MCP upload completed:", result.object_key);
+  console.log("[Gemini Upload] object_key:", result.object_key);
 
-  return result.object_key;
+  return result.object_key as string;
 }
