@@ -137,8 +137,12 @@ function createServer() {
 
       const localPath = `/tmp/${id}.jpg`;
 
+      console.log("[image_to_video] image_url:", image_url);
+      console.log("[image_to_video] prompt:", prompt);
+
       try {
         await downloadFromUrl(image_url, localPath);
+        console.log("[image_to_video] downloaded:", localPath);
 
         const geminiObjectKey = await uploadToGeminiMcp(localPath);
 
